@@ -1,9 +1,12 @@
+"""
+API client for TradePulse.
+"""
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-export const api = axios.create({
-  baseURL: `${API_URL}/api/v1`,
+const api = axios.create({
+  baseURL: `${API_BASE}`,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -13,49 +16,54 @@ export interface Strategy {
   id: number;
   name: string;
   type: string;
-  status: string;
-  health_score: number;
+  status: 'active' | 'paused' | 'error';
+  health_status: 'green' | 'yellow' | 'red';
+  webhook_token: string;
+  win_rate: number;
+  max_drawdown: number;
+  consecutive_losses: number;
   created_at: string;
   updated_at: string;
+  last_signal_at: string | null;
+  discord_webhook_url?: string;
 }
 
-export interface HealthSnapshot {
-  id: number;
-  timestamp: string;
-  total_signals: number;
-  win_count: number;
-  loss_count: number;
-  win_rate: number;
-  avg_pnl: number;
-  current_drawdown_pct: number;
-  consecutive_losses: number;
-  health_score: number;
-  health_status: 'green' | 'yellow' | 'red';
-}
-
-export const getStrategies = async (): Promise<Strategy[]> => {
-  const response = await api.get('/strategies/');
-  return response.data;
-};
-
-export const getStrategyHealth = async (id: number): Promise<HealthSnapshot[]> => {
-  const response = await api.get(`/strategies/${id}/health`);
-  return response.data;
-};
-
-export const getCurrentHealth = async (id: number) => {
-  const response = await api.get(`/strategies/${id}/current-health`);
-  return response.data;
-};
-
-export const createStrategy = async (data: {
+export interface CreateStrategyData {
   name: string;
   type?: string;
-  max_drawdown_pct?: number;
-  min_win_rate?: number;
-  max_consecutive_losses?: number;
-  alert_webhook_url?: string;
-}): Promise<Strategy> => {
-  const response = await api.post('/strategies/', data);
+  max_drawdown_threshold?: number;
+  max_consecutive_losses_threshold?: number;
+  discord_webhook_url?: string;
+}
+
+// API functions
+export const getStrategies = async (): Promise<Strategy[]> => {
+  const response = await api.get('/api/v1/strategies');
+  return response.data;
+};
+
+export const getStrategy = async (id: number): Promise<Strategy> => {
+  const response = await api.get(`/api/v1/strategies/${id}`);
+  return response.data;
+};
+
+export const createStrategy = async (data: CreateStrategyData): Promise<Strategy> => {
+  const response = await api.post('/api/v1/strategies', data);
+  return response.data;
+};
+
+export const updateStrategy = async (id: number, status: string) => {
+  const response = await api.patch(`/api/v1/strategies/${id}?status=${status}`);
+  return response.data;
+};
+
+export const deleteStrategy = async (id: number) => {
+  const response = await api.delete(`/api/v1/strategies/${id}`);
+  return response.data;
+};
+
+// Health check
+export const healthCheck = async () => {
+  const response = await api.get('/api/v1/health');
   return response.data;
 };
