@@ -1,18 +1,18 @@
-"""
-Main dashboard page.
-"""
+'use client';
+
 import { useEffect, useState } from 'react';
 import { getStrategies, Strategy } from '@/lib/api';
 import StrategyCard from '@/components/StrategyCard';
+import CreateStrategyModal from '@/components/CreateStrategyModal';
 
 export default function Dashboard() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   useEffect(() => {
     loadStrategies();
-    // Auto-refresh every 30 seconds
     const interval = setInterval(loadStrategies, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -23,8 +23,7 @@ export default function Dashboard() {
       setStrategies(data);
       setError(null);
     } catch (err) {
-      setError('Failed to load strategies. Is the backend running?');
-      console.error(err);
+      setError('Failed to load strategies. Is the backend running on port 8001?');
     } finally {
       setLoading(false);
     }
@@ -69,7 +68,7 @@ export default function Dashboard() {
                 Refresh
               </button>
               <button
-                onClick={() => alert('Strategy creation coming soon!')}
+                onClick={() => setIsCreateModalOpen(true)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
               >
                 + New Strategy
@@ -81,7 +80,6 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {/* Error Banner */}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}
@@ -123,7 +121,7 @@ export default function Dashboard() {
                 Create your first strategy to start monitoring your TradingView alerts in real-time.
               </p>
               <button
-                onClick={() => alert('Strategy creation coming soon!')}
+                onClick={() => setIsCreateModalOpen(true)}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
               >
                 Create Your First Strategy
@@ -137,20 +135,17 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-
-        {/* Webhook URL Display */}
-        {strategies.length > 0 && (
-          <div className="mt-12 p-6 bg-blue-50 border border-blue-200 rounded-xl">
-            <h3 className="text-sm font-semibold text-blue-900 mb-2">TradingView Integration</h3>
-            <p className="text-sm text-blue-700 mb-3">
-              Copy the webhook URL from each strategy card and paste it into your TradingView alert messages.
-            </p>
-            <div className="bg-white rounded-lg p-3 font-mono text-xs text-gray-600 overflow-x-auto">
-              POST http://localhost:8000/api/v1/webhooks/tradingview?token=YOUR_WEBHOOK_TOKEN
-            </div>
-          </div>
-        )}
       </main>
+
+      {/* Create Strategy Modal */}
+      <CreateStrategyModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={() => {
+          setIsCreateModalOpen(false);
+          loadStrategies();
+        }}
+      />
     </div>
   );
 }
