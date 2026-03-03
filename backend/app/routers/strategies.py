@@ -4,7 +4,7 @@ Strategy management endpoints.
 import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -34,7 +34,7 @@ class StrategyResponse(BaseModel):
     consecutive_losses: int
     created_at: datetime
     updated_at: datetime
-    last_signal_at: datetime = None
+    last_signal_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
