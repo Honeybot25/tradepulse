@@ -1,12 +1,16 @@
+"""
+Health check endpoint.
+"""
 from fastapi import APIRouter
 from datetime import datetime
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
-@router.get("/")
+
+@router.get("")
 def health_check():
+    """Check API health status."""
     return {
         "status": "healthy",
-        "service": "tradepulse",
         "timestamp": datetime.utcnow().isoformat()
     }

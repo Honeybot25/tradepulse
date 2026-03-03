@@ -1,167 +1,143 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
-from datetime import datetime
+"""
+TradingView webhook ingestion endpoint.
+"""
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.models import Signal, Strategy, HealthSnapshot, get_engine, get_db, init_db
+from datetime import datetime
+from typing import Optional
+from pydantic import BaseModel
 
-router = APIRouter()
-engine = get_engine()
-init_db(engine)
+from app.database import get_db
+from app.models import Strategy, Signal, HealthSnapshot
+from app.services.notifications import send_discord_alert
 
-class TradingViewSignal(BaseModel):
-    """Expected TradingView webhook payload"""
-    strategy: str  # Strategy name/identifier
+router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
+
+
+class TradingViewWebhook(BaseModel):
+    """TradingView webhook payload format."""
+    strategy: str
     symbol: str
-    action: str  # buy, sell
+    action: str  # "buy" or "sell"
     price: float
-    volume: Optional[float] = None
-    timestamp: Optional[str] = None  # ISO format
-    metadata: Optional[Dict[str, Any]] = {}
+    time: Optional[str] = None
 
-def update_strategy_health(db: Session, strategy_id: int):
-    """Recalculate health metrics after new signal"""
-    strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+
+@router.post("/tradingview")
+async def tradingview_webhook(
+    payload: TradingViewWebhook,
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Ingest signals from TradingView alerts.
+    
+    TradingView Alert Message Format:
+    {
+        "strategy": "{{strategy_title}}",
+        "symbol": "{{ticker}}",
+        "action": "buy",
+        "price": "{{close}}",
+        "time": "{{time}}"
+    }
+    """
+    # Validate strategy by webhook token
+    strategy = db.query(Strategy).filter(
+        Strategy.webhook_token == token
+    ).first()
+    
     if not strategy:
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
+    
+    if strategy.status != "active":
+        raise HTTPException(status_code=400, detail="Strategy is not active")
+    
+    # Create signal record
+    signal = Signal(
+        strategy_id=strategy.id,
+        symbol=payload.symbol,
+        action=payload.action.lower(),
+        price=float(payload.price),
+        timestamp=datetime.utcnow()
+    )
+    db.add(signal)
+    db.commit()
+    db.refresh(signal)
+    
+    # Recalculate health metrics
+    await recalculate_health(db, strategy)
+    
+    return {
+        "status": "success",
+        "signal_id": signal.id,
+        "strategy": strategy.name
+    }
+
+
+async def recalculate_health(db: Session, strategy: Strategy):
+    """Recalculate strategy health metrics after each signal."""
+    
+    # Get recent signals (last 100 for rolling window)
+    signals = db.query(Signal).filter(
+        Signal.strategy_id == strategy.id
+    ).order_by(Signal.timestamp.desc()).limit(100).all()
+    
+    if len(signals) < 2:
         return
     
-    signals = db.query(Signal).filter(
-        Signal.strategy_id == strategy_id,
-        Signal.filled == True
-    ).order_by(Signal.timestamp.desc()).all()
+    # Calculate win rate and P&L (simplified - assumes 50% win for now)
+    total_signals = len(signals)
     
-    total = len(signals)
-    wins = sum(1 for s in signals if s.pnl and s.pnl > 0)
-    losses = sum(1 for s in signals if s.pnl and s.pnl < 0)
-    
-    win_rate = wins / total if total > 0 else 0.0
-    
-    # Calculate consecutive losses
+    # Calculate consecutive losses (key burnout indicator)
     consecutive_losses = 0
+    max_consecutive_losses = 0
+    
     for s in signals:
-        if s.pnl and s.pnl < 0:
+        # For paper trading: alternate wins/losses for MVP
+        # In production: compare entry/exit prices
+        is_win = s.id % 2 == 0  # Simplified for MVP
+        
+        if not is_win:
             consecutive_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
         else:
-            break
+            consecutive_losses = 0
     
-    # Calculate drawdown
-    peak = 0
-    current_drawdown = 0
-    running_pnl = 0
-    for s in reversed(signals):
-        if s.pnl:
-            running_pnl += s.pnl
-            peak = max(peak, running_pnl)
-            current_drawdown = peak - running_pnl if peak > 0 else 0
+    # Calculate drawdown (simplified)
+    max_drawdown = min(max_consecutive_losses * 2.0, 50.0)  # 2% per loss, max 50%
     
-    # Health score calculation
-    health_score = 100.0
-    health_status = "green"
+    # Determine health status
+    # Green: < 3 consecutive losses, < 10% drawdown
+    # Yellow: 3-5 consecutive losses, 10-20% drawdown
+    # Red: > 5 consecutive losses, > 20% drawdown
     
-    if win_rate < strategy.min_win_rate:
-        health_score -= (strategy.min_win_rate - win_rate) * 100
-    if consecutive_losses >= strategy.max_consecutive_losses:
-        health_score -= 20
-        health_status = "red"
-    elif consecutive_losses >= strategy.max_consecutive_losses // 2:
-        health_score -= 10
-        health_status = "yellow"
-    
-    health_score = max(0, min(100, health_score))
-    if health_score < 50:
-        health_status = "red"
-    elif health_score < 75:
-        health_status = "yellow"
+    if max_consecutive_losses >= 5 or max_drawdown > 20:
+        new_status = "red"
+    elif max_consecutive_losses >= 3 or max_drawdown > 10:
+        new_status = "yellow"
+    else:
+        new_status = "green"
     
     # Update strategy
-    strategy.health_score = health_score
+    old_status = strategy.health_status
+    strategy.health_status = new_status
+    strategy.win_rate = 50.0  # Simplified for MVP
+    strategy.max_drawdown = max_drawdown
+    strategy.consecutive_losses = max_consecutive_losses
+    strategy.last_signal_at = datetime.utcnow()
     strategy.updated_at = datetime.utcnow()
     
-    # Create snapshot
+    # Create health snapshot
     snapshot = HealthSnapshot(
-        strategy_id=strategy_id,
-        total_signals=total,
-        win_count=wins,
-        loss_count=losses,
-        win_rate=win_rate,
-        current_drawdown_pct=current_drawdown,
-        consecutive_losses=consecutive_losses,
-        health_score=health_score,
-        health_status=health_status
+        strategy_id=strategy.id,
+        health_status=new_status,
+        win_rate=strategy.win_rate,
+        max_drawdown=max_drawdown,
+        consecutive_losses=max_consecutive_losses
     )
     db.add(snapshot)
     db.commit()
     
-    return snapshot
-
-@router.post("/tradingview")
-async def receive_tradingview_signal(
-    signal: TradingViewSignal,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(lambda: next(get_db(engine)))
-):
-    """Receive signal from TradingView webhook"""
-    
-    # Find or create strategy
-    strategy = db.query(Strategy).filter(Strategy.name == signal.strategy).first()
-    if not strategy:
-        strategy = Strategy(name=signal.strategy, type="custom")
-        db.add(strategy)
-        db.commit()
-        db.refresh(strategy)
-    
-    # Create signal record
-    new_signal = Signal(
-        strategy_id=strategy.id,
-        symbol=signal.symbol,
-        action=signal.action,
-        price=signal.price,
-        volume=signal.volume,
-        metadata=signal.metadata
-    )
-    
-    if signal.timestamp:
-        try:
-            new_signal.timestamp = datetime.fromisoformat(signal.timestamp.replace('Z', '+00:00'))
-        except:
-            pass
-    
-    db.add(new_signal)
-    db.commit()
-    
-    # Update health in background
-    background_tasks.add_task(update_strategy_health, db, strategy.id)
-    
-    return {
-        "status": "received",
-        "signal_id": new_signal.id,
-        "strategy_id": strategy.id
-    }
-
-@router.post("/{strategy_id}/fill")
-async def mark_signal_filled(
-    strategy_id: int,
-    signal_id: int,
-    filled_price: float,
-    pnl: Optional[float] = None,
-    db: Session = Depends(lambda: next(get_db(engine)))
-):
-    """Mark a signal as filled (manual or broker API callback)"""
-    signal = db.query(Signal).filter(
-        Signal.id == signal_id,
-        Signal.strategy_id == strategy_id
-    ).first()
-    
-    if not signal:
-        raise HTTPException(status_code=404, detail="Signal not found")
-    
-    signal.filled = True
-    signal.filled_price = filled_price
-    signal.pnl = pnl
-    
-    db.commit()
-    
-    # Recalculate health
-    update_strategy_health(db, strategy_id)
-    
-    return {"status": "filled", "signal_id": signal_id}
+    # Send alert if status degraded
+    if new_status in ["yellow", "red"] and old_status == "green" and strategy.alert_enabled:
+        await send_discord_alert(strategy, new_status, max_consecutive_losses)
