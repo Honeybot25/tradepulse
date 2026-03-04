@@ -1,9 +1,9 @@
-"""
-API client for TradePulse.
-"""
+/**
+ * API client for TradePulse.
+ */
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://tradepulse-demo.loca.lt';
 
 const api = axios.create({
   baseURL: `${API_BASE}`,
@@ -34,6 +34,16 @@ export interface CreateStrategyData {
   max_drawdown_threshold?: number;
   max_consecutive_losses_threshold?: number;
   discord_webhook_url?: string;
+}
+
+export interface HealthSnapshot {
+  id: number;
+  strategy_id: number;
+  health_status: 'green' | 'yellow' | 'red';
+  win_rate: number;
+  max_drawdown: number;
+  consecutive_losses: number;
+  created_at: string;
 }
 
 // API functions

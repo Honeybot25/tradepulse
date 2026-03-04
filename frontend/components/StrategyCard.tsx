@@ -1,6 +1,6 @@
-"""
-Strategy card component for dashboard.
-"""
+/**
+ * Strategy card component for dashboard.
+ */
 import { Strategy } from '@/lib/api';
 
 interface StrategyCardProps {

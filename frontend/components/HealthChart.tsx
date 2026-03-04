@@ -17,10 +17,10 @@ export default function HealthChart({ data }: HealthChartProps) {
   }
 
   const chartData = [...data].reverse().map(snapshot => ({
-    time: new Date(snapshot.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    health: snapshot.health_score,
+    time: new Date(snapshot.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    health: snapshot.health_status === 'green' ? 100 : snapshot.health_status === 'yellow' ? 75 : 50,
     winRate: snapshot.win_rate * 100,
-    drawdown: snapshot.current_drawdown_pct,
+    drawdown: snapshot.max_drawdown,
   }));
 
   return (
