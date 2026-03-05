@@ -5,8 +5,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from app.models import Base
 
+import os
+
 # SQLite for MVP - upgrade to PostgreSQL for production
-SQLALCHEMY_DATABASE_URL = "sqlite:///./tradepulse.db"
+# Use /tmp for Render (ephemeral filesystem), otherwise use local file
+if os.environ.get("RENDER"):
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./tmp/tradepulse.db"
+else:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./tradepulse.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,

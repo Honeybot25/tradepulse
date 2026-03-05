@@ -9,5 +9,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: DATABASE_URL
-        value: sqlite:///./tradepulse.db
+        value: sqlite:///./tmp/tradepulse.db
+      - key: RENDER
+        value: "true"
     plan: free
