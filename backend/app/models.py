@@ -1,94 +1,36 @@
-"""
-SQLAlchemy models for TradePulse.
-"""
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum as SQLEnum
-from sqlalchemy.orm import relationship, declarative_base
-import enum
+from typing import List
 
 Base = declarative_base()
 
-
-class StrategyStatus(str, enum.Enum):
-    ACTIVE = "active"
-    PAUSED = "paused"
-    ERROR = "error"
-
-
-class HealthStatus(str, enum.Enum):
-    GREEN = "green"
-    YELLOW = "yellow"
-    RED = "red"
-
-
 class Strategy(Base):
-    """Trading strategy configuration and state."""
     __tablename__ = "strategies"
     
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True, nullable=False)
-    type = Column(String, default="custom")  # momentum, mean_reversion, etc.
-    status = Column(String, default=StrategyStatus.ACTIVE)
-    health_status = Column(String, default=HealthStatus.GREEN)
-    
-    # Webhook integration
-    webhook_token = Column(String, unique=True, index=True)
-    
-    # Health metrics (cached for quick dashboard access)
-    win_rate = Column(Float, default=0.0)
-    max_drawdown = Column(Float, default=0.0)
-    consecutive_losses = Column(Integer, default=0)
-    
-    # Thresholds
-    max_drawdown_threshold = Column(Float, default=10.0)  # Alert at 10% drawdown
-    max_consecutive_losses_threshold = Column(Integer, default=5)  # Alert at 5 losses
-    
-    # Alert configuration
-    discord_webhook_url = Column(String, nullable=True)
-    alert_enabled = Column(Boolean, default=True)
-    
-    # Timestamps
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    description = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_signal_at = Column(DateTime, nullable=True)
     
-    # Relationships
-    signals = relationship("Signal", back_populates="strategy", cascade="all, delete-orphan")
-    health_snapshots = relationship("HealthSnapshot", back_populates="strategy", cascade="all, delete-orphan")
+    # Relationship
+    trades: List["Trade"] = relationship("Trade", back_populates="strategy")
 
-
-class Signal(Base):
-    """Individual trading signal from TradingView."""
-    __tablename__ = "signals"
+class Trade(Base):
+    __tablename__ = "trades"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
-    
-    symbol = Column(String, index=True, nullable=False)
-    action = Column(String, nullable=False)  # buy or sell
-    price = Column(Float, nullable=False)
+    symbol = Column(String(50), nullable=False)
+    side = Column(String(10), nullable=False)  # BUY or SELL
+    entry_price = Column(Float, nullable=False)
+    exit_price = Column(Float, nullable=True)
+    quantity = Column(Float, nullable=False)
+    pnl = Column(Float, nullable=True)
+    status = Column(String(20), nullable=False)  # OPEN or CLOSED
     timestamp = Column(DateTime, default=datetime.utcnow)
     
-    # Optional: filled status for paper trading
-    filled = Column(Boolean, default=False)
-    exit_price = Column(Float, nullable=True)
-    pnl = Column(Float, nullable=True)
-    
-    strategy = relationship("Strategy", back_populates="signals")
-
-
-class HealthSnapshot(Base):
-    """Time-series health data for charting and alerts."""
-    __tablename__ = "health_snapshots"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
-    
-    health_status = Column(String, nullable=False)
-    win_rate = Column(Float, default=0.0)
-    max_drawdown = Column(Float, default=0.0)
-    consecutive_losses = Column(Integer, default=0)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    strategy = relationship("Strategy", back_populates="health_snapshots")
+    # Relationship
+    strategy: "Strategy" = relationship("Strategy", back_populates="trades")
