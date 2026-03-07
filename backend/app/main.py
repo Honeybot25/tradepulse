@@ -4,19 +4,23 @@ TradePulse FastAPI application.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import create_tables
-from app.routers import strategies, webhooks, health
-
-# Create database tables on startup (with error handling for Render)
+# Database setup - make completely optional
 import os
+db_available = False
 try:
+    from app.database import create_tables
     # Ensure /tmp exists for Render
     if os.environ.get("RENDER"):
         os.makedirs("/tmp", exist_ok=True)
     create_tables()
+    db_available = True
+    print("✅ Database initialized successfully")
 except Exception as e:
-    print(f"Warning: Could not create tables: {e}")
-    # Continue anyway - tables might already exist
+    print(f"⚠️  Database initialization skipped: {e}")
+    # Continue without database - use in-memory store
+    db_available = False
+
+from app.routers import strategies, webhooks, health
 
 app = FastAPI(
     title="TradePulse API",
