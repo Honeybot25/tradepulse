@@ -1,15 +1,11 @@
 services:
   - type: web
     name: tradepulse-1
-    runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: DATABASE_URL
-        value: sqlite:///./tmp/tradepulse.db
-      - key: RENDER
-        value: "true"
+      - key: PORT
+        value: 8000
     plan: free
