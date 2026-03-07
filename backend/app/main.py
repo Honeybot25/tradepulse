@@ -7,8 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_tables
 from app.routers import strategies, webhooks, health
 
-# Create database tables on startup
-create_tables()
+# Create database tables on startup (with error handling for Render)
+import os
+try:
+    # Ensure /tmp exists for Render
+    if os.environ.get("RENDER"):
+        os.makedirs("/tmp", exist_ok=True)
+    create_tables()
+except Exception as e:
+    print(f"Warning: Could not create tables: {e}")
+    # Continue anyway - tables might already exist
 
 app = FastAPI(
     title="TradePulse API",

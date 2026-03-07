@@ -10,7 +10,8 @@ import os
 # SQLite for MVP - upgrade to PostgreSQL for production
 # Use /tmp for Render (ephemeral filesystem), otherwise use local file
 if os.environ.get("RENDER"):
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./tmp/tradepulse.db"
+    # Use absolute path for Render's ephemeral filesystem
+    SQLALCHEMY_DATABASE_URL = "sqlite:////tmp/tradepulse.db"
 else:
     SQLALCHEMY_DATABASE_URL = "sqlite:///./tradepulse.db"
 
